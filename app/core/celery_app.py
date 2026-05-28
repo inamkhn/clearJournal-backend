@@ -1,0 +1,1 @@
+# Placeholder for app/core/celery_app.py

@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+alembic
+psycopg[binary]
+pydantic[email]
+pydantic-settings
+python-jose[cryptography]
+passlib[bcrypt]
+celery
+redis
+boto3
+cryptography
+httpx
+python-multipart
+sendgrid
+anthropic
