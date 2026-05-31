@@ -1,1 +1,1 @@
-# Placeholder for app/schemas/common.py
+from app.models.users import Message
