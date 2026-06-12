@@ -1,1 +1,1 @@
-from app.models.users import Message
+from app.schemas.auth import Message

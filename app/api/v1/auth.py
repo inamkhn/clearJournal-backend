@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, Query, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api import deps
-from app.models.users import User, UserCreate, UserPublic, UserUpdate, Message, Token
+from app.models.users import User
+from app.schemas.auth import UserCreate, UserPublic, UserUpdate, Message, Token
 from app.core.exceptions import (
     UserAlreadyExistsException,
     UserNotFoundException,

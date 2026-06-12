@@ -3,7 +3,7 @@ from sqlmodel import Session
 from typing import Optional
 
 from app.db.session import get_session
-from app.models.users import UserCreate, UserPublic, UserUpdate, Message
+from app.schemas.auth import UserCreate, UserPublic, UserUpdate, Message
 from app.repositories.user_repository import UserRepository
 
 class AuthService:

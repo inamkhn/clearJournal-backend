@@ -12,7 +12,8 @@ from app.core.exceptions import (
 import secrets
 
 from app.core.config import settings
-from app.models.users import User, UserCreate, UserPublic, UserUpdate, Message
+from app.models.users import User
+from app.schemas.auth import UserCreate, UserPublic, UserUpdate, Message
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 

@@ -4,21 +4,20 @@ from sqlmodel import SQLModel, Field, Relationship, TIMESTAMP, Column
 from sqlalchemy import JSON
 
 
-# ── Wallet (master list of supported wallets, e.g. MetaMask, Trust Wallet) ───
+# ── Exchange (master list of supported exchanges) ─────────────────────────────
 
-class WalletBase(SQLModel):
+class ExchangeBase(SQLModel):
     name: str = Field(default="")
     description: str = Field(default="")
     configs: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     is_active: bool = Field(default=True)
+    image_url: str = ""
 
 
-class Wallet(WalletBase, table=True):
-    __tablename__ = "wallets"
+class Exchange(ExchangeBase, table=True):
+    __tablename__ = "exchanges"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    image_url: str = Field(default="")
-
     created_at: datetime = Field(
         default_factory=datetime.utcnow,
         sa_column=Column(TIMESTAMP, default=datetime.utcnow)
@@ -28,26 +27,25 @@ class Wallet(WalletBase, table=True):
         sa_column=Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
     )
 
-    accounts: List["WalletAccount"] = Relationship(back_populates="wallet")
+    accounts: List["ExchangeAccount"] = Relationship(back_populates="exchange")
 
 
-# ── WalletAccount (user's connected wallet addresses) ─────────────────────────
+# ── ExchangeAccount (user's connected exchange API keys) ──────────────────────
 
-class WalletAccountBase(SQLModel):
-    wallet_address: str = Field(default="")
+class ExchangeAccountBase(SQLModel):
     name: str = Field(default="")
-    is_active: bool = Field(default=True)
+    api_key: str = Field(default="")
     is_favorite: bool = Field(default=False)
-    is_verified: bool = Field(default=False)
+    exchange_id: int = Field(foreign_key="exchanges.id")
     user_id: int = Field(foreign_key="users.id")
-    wallet_id: Optional[int] = Field(default=None, foreign_key="wallets.id")
-    api_wallet_address: Optional[str] = Field(default=None)
 
 
-class WalletAccount(WalletAccountBase, table=True):
-    __tablename__ = "wallet_accounts"
+class ExchangeAccount(ExchangeAccountBase, table=True):
+    __tablename__ = "exchange_accounts"
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    api_secret_encrypted: str = Field(default="")
+    passphrase_encrypted: Optional[str] = Field(default=None)
 
     last_sync: Optional[datetime] = Field(
         default=None,
@@ -64,4 +62,4 @@ class WalletAccount(WalletAccountBase, table=True):
         sa_column=Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
     )
 
-    wallet: Optional[Wallet] = Relationship(back_populates="accounts")
+    exchange: Optional[Exchange] = Relationship(back_populates="accounts")

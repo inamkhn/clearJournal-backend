@@ -4,22 +4,18 @@ from sqlmodel import Session, select
 from app.db.session import get_session
 from app.core.security import decode_token
 from app.models.users import User
-from app.core.database import SessionLocal
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     session: Session = Depends(get_session)
 ):
-    payload = decode_token(token)
+    try:
+        payload = decode_token(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+        
     user_id = payload.get("user_id") or payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
