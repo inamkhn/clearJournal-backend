@@ -4,7 +4,7 @@ from sqlmodel import SQLModel
 
 from app.schemas.exchange import ExchangeAccountPublic
 from app.schemas.wallet_account import WalletAccountRead
-from app.schemas.storage import StorageRead
+from app.schemas.storage import StoragePublic
 
 
 # ── Allocation Items (where an asset is held) ─────────────────────────────────
@@ -19,7 +19,7 @@ class AssetItemExchange(SQLModel):
 
 class AssetItemStorage(SQLModel):
     type: Literal["storage"] = "storage"
-    storage: StorageRead
+    storage: StoragePublic
     value: float = 0
     price_asset: float = 0
     amount: float  # read-only
