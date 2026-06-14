@@ -63,3 +63,4 @@ class ExchangeAccount(ExchangeAccountBase, table=True):
     )
 
     exchange: Optional[Exchange] = Relationship(back_populates="accounts")
+    trades: List["Trade"] = Relationship(back_populates="exchange_account")

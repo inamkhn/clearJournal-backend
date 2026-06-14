@@ -28,6 +28,9 @@ class TradeBase(SQLModel):
     realized_pnl: float = Field(default=0)
     status: TradeStatus = Field(default=TradeStatus.complete)
     cumulative_pnl: float = Field(default=0)
+    drawdown: float = Field(default=0)
+    rolling_peak: float = Field(default=0)
+    under_water_period: float = Field(default=0)  # seconds
     leverage: Optional[float] = Field(default=None)
     fees: float = Field(default=0)
     exchange_account_id: int = Field(foreign_key="exchange_accounts.id", index=True)
@@ -49,6 +52,10 @@ class Trade(TradeBase, table=True):
     )
 
     # Relationships
+    exchange_account: Optional["ExchangeAccount"] = Relationship(
+        back_populates="trades",
+        sa_relationship_kwargs={"lazy": "noload"},
+    )
     tags: List["TradeTag"] = Relationship(back_populates="trade")
 
 
@@ -58,3 +65,6 @@ class TradeTag(SQLModel, table=True):
 
     trade_id: int = Field(foreign_key="trades.id", primary_key=True)
     tag_id: int = Field(foreign_key="tags.id", primary_key=True)
+
+    trade: Optional["Trade"] = Relationship(back_populates="tags")
+    tag: Optional["Tag"] = Relationship()
