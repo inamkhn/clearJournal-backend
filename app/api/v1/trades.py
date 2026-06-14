@@ -10,8 +10,13 @@ from app.schemas.trade_stats import (
     TradeStats,
     TradeResultsStats,
     TradeSummary,
+    FundingStats,
+    MfeMaeStats,
+    TradeMetricsResponse,
 )
+from app.schemas.kline import KlineResponse
 from app.services.trade_service import TradeService
+from app.services.kline_service import KlineService
 
 router = APIRouter(tags=["Trades"])
 
@@ -142,6 +147,68 @@ def get_stats_by_trade_types(
     )
 
 
+@router.get("/stats/funding", response_model=FundingStats)
+def get_funding_stats(
+    exchange_account_ids: Optional[List[int]] = Query(None, description="Filter by exchange account IDs"),
+    symbols: Optional[List[str]] = Query(None, description="Filter by trading symbols"),
+    start_date: Optional[datetime] = Query(None, description="Start date filter"),
+    end_date: Optional[datetime] = Query(None, description="End date filter"),
+    trade_service: TradeService = Depends(),
+    current_user: User = Depends(get_current_user),
+):
+    """Get funding fee statistics for futures/perpetual trades."""
+    return trade_service.get_funding_stats(
+        user_id=current_user.id,
+        exchange_account_ids=exchange_account_ids,
+        symbols=symbols,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
+@router.get("/stats/mfe-mae", response_model=MfeMaeStats)
+def get_mfe_mae_stats(
+    exchange_account_ids: Optional[List[int]] = Query(None, description="Filter by exchange account IDs"),
+    symbols: Optional[List[str]] = Query(None, description="Filter by trading symbols"),
+    start_date: Optional[datetime] = Query(None, description="Start date filter"),
+    end_date: Optional[datetime] = Query(None, description="End date filter"),
+    trade_service: TradeService = Depends(),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get Maximum Favorable Excursion (MFE) and Maximum Adverse Excursion (MAE) statistics.
+    
+    MFE: Maximum unrealized profit during the trade
+    MAE: Maximum unrealized loss during the trade
+    """
+    return trade_service.get_mfe_mae_stats(
+        user_id=current_user.id,
+        exchange_account_ids=exchange_account_ids,
+        symbols=symbols,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
+@router.get("/stats/metric", response_model=TradeMetricsResponse)
+def get_metrics(
+    exchange_account_ids: Optional[List[int]] = Query(None, description="Filter by exchange account IDs"),
+    symbols: Optional[List[str]] = Query(None, description="Filter by trading symbols"),
+    start_date: Optional[datetime] = Query(None, description="Start date filter"),
+    end_date: Optional[datetime] = Query(None, description="End date filter"),
+    trade_service: TradeService = Depends(),
+    current_user: User = Depends(get_current_user),
+):
+    """Get specific trading metrics (total trades, win rate, expectancy, etc.)."""
+    return trade_service.get_metrics(
+        user_id=current_user.id,
+        exchange_account_ids=exchange_account_ids,
+        symbols=symbols,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
 @router.get("/stats/summary", response_model=TradeSummary)
 def get_stats_summary(
     trade_service: TradeService = Depends(),
@@ -212,3 +279,27 @@ def get_trade(
 ):
     """Get a single trade by ID with computed fields."""
     return trade_service.get_trade(trade_id, current_user.id)
+
+
+# ── GET /trades/{trade_id}/klines ─────────────────────────────────────────────
+
+@router.get("/{trade_id}/klines", response_model=KlineResponse)
+def get_trade_klines(
+    trade_id: int,
+    interval: str = Query("1h", description="Kline interval: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M"),
+    exchange_name: Optional[str] = Query(None, description="Exchange name (auto-detected from trade if not provided)"),
+    kline_service: KlineService = Depends(),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get candlestick/kline data for a specific trade.
+    
+    Returns OHLCV data for the trade's symbol during the trade's time window,
+    with 10% buffer before and after. Useful for chart visualization.
+    """
+    return kline_service.get_trade_klines(
+        trade_id=trade_id,
+        user_id=current_user.id,
+        interval=interval,
+        exchange_name=exchange_name,
+    )

@@ -84,3 +84,60 @@ class TradeSummary(SQLModel):
     most_profitable_symbol: Optional[str] = None
     total_fees_paid: float = 0
     total_trades: int = 0
+
+
+# ── Funding Statistics ────────────────────────────────────────────────────────
+
+class FundingStats(SQLModel):
+    """Funding fee statistics for futures/perpetual trades."""
+    total_funding_paid: float = 0
+    total_funding_received: float = 0
+    net_funding: float = 0
+    avg_funding_rate: float = 0
+    funding_count: int = 0
+    symbols_with_funding: List[str] = []
+
+
+# ── MFE/MAE Statistics ───────────────────────────────────────────────────────
+
+class TradeMfeMae(SQLModel):
+    """MFE/MAE data for a single trade."""
+    trade_id: int
+    symbol: str
+    side: str
+    entry_price: float
+    exit_price: Optional[float] = None
+    mfe: float = 0  # Maximum Favorable Excursion (best unrealized during trade)
+    mae: float = 0  # Maximum Adverse Excursion (worst unrealized during trade)
+    mfe_pct: float = 0  # MFE as percentage
+    mae_pct: float = 0  # MAE as percentage
+    realized_pnl: float = 0
+    efficiency: float = 0  # realized_pnl / mfe (how much of the move was captured)
+
+
+class MfeMaeStats(SQLModel):
+    """Aggregated MFE/MAE statistics."""
+    items: List[TradeMfeMae] = []
+    avg_mfe: float = 0
+    avg_mae: float = 0
+    avg_mfe_pct: float = 0
+    avg_mae_pct: float = 0
+    avg_efficiency: float = 0
+    best_efficiency: float = 0
+    worst_efficiency: float = 0
+
+
+# ── Metric Statistics ─────────────────────────────────────────────────────────
+
+class TradeMetric(SQLModel):
+    """A specific trading metric."""
+    metric_name: str
+    metric_value: float
+    metric_label: str
+    description: str = ""
+    unit: str = ""  # e.g., "$", "%", "trades"
+
+
+class TradeMetricsResponse(SQLModel):
+    """Response with specific trading metrics."""
+    metrics: List[TradeMetric] = []

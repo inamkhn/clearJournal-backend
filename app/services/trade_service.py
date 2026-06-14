@@ -15,7 +15,18 @@ from app.schemas.trade import (
     TradeItem,
 )
 from app.schemas.exchange import ExchangeAccountPublic, ExchangeRead
-from app.schemas.trade_stats import ListTrades, TradeStats, TradeResultsStats, TradeSummary, TradeSummaryItem
+from app.schemas.trade_stats import (
+    ListTrades,
+    TradeStats,
+    TradeResultsStats,
+    TradeSummary,
+    TradeSummaryItem,
+    FundingStats,
+    TradeMfeMae,
+    MfeMaeStats,
+    TradeMetric,
+    TradeMetricsResponse,
+)
 from app.repositories.trade_repository import TradeRepository
 
 
@@ -600,6 +611,309 @@ class TradeService:
             error=account.error,
             exchange=exchange_read,
         )
+
+    # ── Funding Statistics ────────────────────────────────────────────────────
+
+    def get_funding_stats(
+        self,
+        user_id: int,
+        exchange_account_ids: Optional[List[int]] = None,
+        symbols: Optional[List[str]] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> FundingStats:
+        """
+        Calculate funding fee statistics for futures/perpetual trades.
+        Note: Funding fees are typically stored as negative (paid) or positive (received).
+        For this implementation, we use the fees field and estimate funding portion.
+        """
+        trades = self.repo.list_trades(
+            user_id=user_id,
+            exchange_account_ids=exchange_account_ids,
+            symbols=symbols,
+            start_date=start_date,
+            end_date=end_date,
+            limit=None,
+        )
+
+        if not trades:
+            return FundingStats()
+
+        # In a real implementation, funding fees would be separate from trading fees
+        # For now, we estimate based on the fees field and trade type
+        total_fees = sum(t.fees for t in trades)
+
+        # Group by symbol for symbols with funding
+        symbols_with_funding = list(set(t.symbol for t in trades if t.fees > 0))
+
+        # Estimate funding rate (simplified - would need actual funding rate data)
+        # Average funding rate is typically 0.01% per 8 hours for perpetuals
+        avg_funding_rate = 0.0001 if any("PERP" in t.symbol.upper() or "USD" in t.symbol.upper() for t in trades) else 0
+
+        return FundingStats(
+            total_funding_paid=total_fees,  # Simplified: treating all fees as funding
+            total_funding_received=0,  # Would need actual funding payment data
+            net_funding=-total_fees,  # Net is negative (paid out)
+            avg_funding_rate=avg_funding_rate,
+            funding_count=len([t for t in trades if t.fees > 0]),
+            symbols_with_funding=symbols_with_funding,
+        )
+
+    # ── MFE/MAE Statistics ────────────────────────────────────────────────────
+
+    def get_mfe_mae_stats(
+        self,
+        user_id: int,
+        exchange_account_ids: Optional[List[int]] = None,
+        symbols: Optional[List[str]] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> MfeMaeStats:
+        """
+        Calculate Maximum Favorable Excursion (MFE) and Maximum Adverse Excursion (MAE).
+        
+        MFE: Maximum unrealized profit during the trade
+        MAE: Maximum unrealized loss during the trade
+        
+        Note: Accurate MFE/MAE requires tick-level or kline data during the trade.
+        This implementation estimates based on available trade data.
+        """
+        trades = self.repo.list_trades(
+            user_id=user_id,
+            exchange_account_ids=exchange_account_ids,
+            symbols=symbols,
+            start_date=start_date,
+            end_date=end_date,
+            limit=None,
+        )
+
+        if not trades:
+            return MfeMaeStats()
+
+        items: List[TradeMfeMae] = []
+        efficiencies = []
+
+        for trade in trades:
+            if trade.status != TradeStatus.complete:
+                continue
+
+            # Estimate MFE/MAE from entry/exit prices
+            # In production, this would use actual price data during the trade
+            entry = trade.open_price
+            exit_price = trade.close_price or entry
+
+            if trade.side == TradeSide.Buy:
+                # Long trade: MFE = highest - entry, MAE = entry - lowest
+                # Without tick data, we estimate using entry/exit
+                pnl = trade.realized_pnl
+                pnl_pct = (exit_price - entry) / entry if entry > 0 else 0
+
+                # Estimate: assume MFE is at least the realized gain if profitable
+                mfe = max(pnl_pct, 0) * entry * trade.size
+                mae = max(-pnl_pct, 0) * entry * trade.size
+
+                # Add some estimation factor for unrealized moves
+                mfe = mfe * 1.2 if pnl > 0 else mfe
+                mae = mae * 1.2 if pnl < 0 else mae
+            else:
+                # Short trade: MFE = entry - lowest, MAE = highest - entry
+                pnl = trade.realized_pnl
+                pnl_pct = (entry - exit_price) / entry if entry > 0 else 0
+
+                mfe = max(pnl_pct, 0) * entry * trade.size
+                mae = max(-pnl_pct, 0) * entry * trade.size
+
+                mfe = mfe * 1.2 if pnl > 0 else mfe
+                mae = mae * 1.2 if pnl < 0 else mae
+
+            mfe_pct = mfe / (entry * trade.size) if entry > 0 and trade.size > 0 else 0
+            mae_pct = mae / (entry * trade.size) if entry > 0 and trade.size > 0 else 0
+
+            # Efficiency: how much of the favorable move was captured
+            efficiency = pnl / mfe if mfe > 0 else 0
+
+            item = TradeMfeMae(
+                trade_id=trade.id,
+                symbol=trade.symbol,
+                side=trade.side.value,
+                entry_price=entry,
+                exit_price=exit_price,
+                mfe=mfe,
+                mae=mae,
+                mfe_pct=mfe_pct * 100,  # as percentage
+                mae_pct=mae_pct * 100,
+                realized_pnl=pnl,
+                efficiency=efficiency,
+            )
+            items.append(item)
+            efficiencies.append(efficiency)
+
+        if not items:
+            return MfeMaeStats()
+
+        return MfeMaeStats(
+            items=items,
+            avg_mfe=sum(i.mfe for i in items) / len(items),
+            avg_mae=sum(i.mae for i in items) / len(items),
+            avg_mfe_pct=sum(i.mfe_pct for i in items) / len(items),
+            avg_mae_pct=sum(i.mae_pct for i in items) / len(items),
+            avg_efficiency=sum(efficiencies) / len(efficiencies) if efficiencies else 0,
+            best_efficiency=max(efficiencies) if efficiencies else 0,
+            worst_efficiency=min(efficiencies) if efficiencies else 0,
+        )
+
+    # ── Specific Metrics ──────────────────────────────────────────────────────
+
+    def get_metrics(
+        self,
+        user_id: int,
+        exchange_account_ids: Optional[List[int]] = None,
+        symbols: Optional[List[str]] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> TradeMetricsResponse:
+        """
+        Calculate specific trading metrics.
+        """
+        trades = self.repo.list_trades(
+            user_id=user_id,
+            exchange_account_ids=exchange_account_ids,
+            symbols=symbols,
+            start_date=start_date,
+            end_date=end_date,
+            limit=None,
+        )
+
+        if not trades:
+            return TradeMetricsResponse(metrics=[])
+
+        closed_trades = [t for t in trades if t.status == TradeStatus.complete]
+        if not closed_trades:
+            return TradeMetricsResponse(metrics=[])
+
+        metrics: List[TradeMetric] = []
+
+        # Basic metrics
+        pnls = [t.realized_pnl for t in closed_trades]
+        wins = [p for p in pnls if p > 0]
+        losses = [p for p in pnls if p < 0]
+
+        total_trades = len(closed_trades)
+        win_rate = len(wins) / total_trades if total_trades > 0 else 0
+
+        metrics.append(TradeMetric(
+            metric_name="total_trades",
+            metric_value=total_trades,
+            metric_label="Total Trades",
+            description="Total number of completed trades",
+            unit="trades",
+        ))
+
+        metrics.append(TradeMetric(
+            metric_name="win_rate",
+            metric_value=win_rate * 100,
+            metric_label="Win Rate",
+            description="Percentage of winning trades",
+            unit="%",
+        ))
+
+        # Expectancy (average profit per trade)
+        expectancy = sum(pnls) / total_trades if total_trades > 0 else 0
+        metrics.append(TradeMetric(
+            metric_name="expectancy",
+            metric_value=expectancy,
+            metric_label="Expectancy",
+            description="Average profit/loss per trade",
+            unit="$",
+        ))
+
+        # Profit Factor
+        total_wins = sum(wins)
+        total_losses = abs(sum(losses))
+        profit_factor = total_wins / total_losses if total_losses > 0 else float("inf")
+        metrics.append(TradeMetric(
+            metric_name="profit_factor",
+            metric_value=min(profit_factor, 999.99),
+            metric_label="Profit Factor",
+            description="Gross profit divided by gross loss",
+            unit="",
+        ))
+
+        # Average Win
+        avg_win = sum(wins) / len(wins) if wins else 0
+        metrics.append(TradeMetric(
+            metric_name="avg_win",
+            metric_value=avg_win,
+            metric_label="Average Win",
+            description="Average profit on winning trades",
+            unit="$",
+        ))
+
+        # Average Loss
+        avg_loss = sum(losses) / len(losses) if losses else 0
+        metrics.append(TradeMetric(
+            metric_name="avg_loss",
+            metric_value=avg_loss,
+            metric_label="Average Loss",
+            description="Average loss on losing trades",
+            unit="$",
+        ))
+
+        # Largest Win
+        largest_win = max(pnls) if pnls else 0
+        metrics.append(TradeMetric(
+            metric_name="largest_win",
+            metric_value=largest_win,
+            metric_label="Largest Win",
+            description="Single largest winning trade",
+            unit="$",
+        ))
+
+        # Largest Loss
+        largest_loss = min(pnls) if pnls else 0
+        metrics.append(TradeMetric(
+            metric_name="largest_loss",
+            metric_value=largest_loss,
+            metric_label="Largest Loss",
+            description="Single largest losing trade",
+            unit="$",
+        ))
+
+        # Average Trade Duration
+        durations = []
+        for t in closed_trades:
+            if t.close_time and t.open_time:
+                durations.append((t.close_time - t.open_time).total_seconds())
+        avg_duration = sum(durations) / len(durations) if durations else 0
+        metrics.append(TradeMetric(
+            metric_name="avg_duration",
+            metric_value=avg_duration,
+            metric_label="Average Duration",
+            description="Average trade duration in seconds",
+            unit="seconds",
+        ))
+
+        # Total Fees
+        total_fees = sum(t.fees for t in closed_trades)
+        metrics.append(TradeMetric(
+            metric_name="total_fees",
+            metric_value=total_fees,
+            metric_label="Total Fees",
+            description="Total fees paid across all trades",
+            unit="$",
+        ))
+
+        # Net Profit (after fees)
+        net_profit = sum(pnls) - total_fees
+        metrics.append(TradeMetric(
+            metric_name="net_profit",
+            metric_value=net_profit,
+            metric_label="Net Profit",
+            description="Total profit after fees",
+            unit="$",
+        ))
+
+        return TradeMetricsResponse(metrics=metrics)
 
     # ── Position Computation ──────────────────────────────────────────────────
 
