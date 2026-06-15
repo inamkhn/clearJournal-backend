@@ -6,16 +6,6 @@ from sqlmodel import SQLModel
 from app.schemas.price import PriceRead
 
 
-# ── Enums ─────────────────────────────────────────────────────────────────────
-
-class SubscriptionStatusEnum:
-    TRIAL = "TRIAL"
-    ACTIVE = "ACTIVE"
-    INACTIVE = "INACTIVE"
-    CANCELED = "CANCELED"
-    PAST_DUE = "PAST_DUE"
-
-
 # ── Checkout ──────────────────────────────────────────────────────────────────
 
 class CheckoutSessionRequest(SQLModel):

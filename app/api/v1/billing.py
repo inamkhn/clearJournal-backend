@@ -24,12 +24,12 @@ router = APIRouter(tags=["billing"])
 @router.post("/checkout", response_model=CheckoutSessionResponse)
 def create_checkout(
     request: CheckoutSessionRequest,
+    http_request: Request,
     billing_service: BillingService = Depends(),
     current_user: User = Depends(get_current_user),
-    http_request: Request = None,
 ):
     """Create a Tap checkout session for subscription payment."""
-    base_url = str(http_request.base_url).rstrip("/") if http_request else ""
+    base_url = str(http_request.base_url).rstrip("/")
     return billing_service.create_checkout(
         user=current_user,
         request=request,

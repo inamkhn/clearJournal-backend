@@ -1,4 +1,5 @@
 """Billing service — handles checkout, webhooks, subscription lifecycle, invoices."""
+import json
 import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -12,7 +13,6 @@ from app.db.session import get_session
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.invoice import Invoice
 from app.models.price import Price
-from app.models.product import Product
 from app.models.users import User
 from app.schemas.billing import (
     CheckoutSessionRequest,
@@ -73,48 +73,53 @@ class BillingService:
             )
         return price
 
+    def _build_price_read(self, price: Price) -> Optional[PriceRead]:
+        """Build PriceRead with nested product dict from a loaded Price."""
+        if not price or not price.product:
+            return None
+        return PriceRead(
+            id=price.id,
+            product_id=price.product_id,
+            price_amount=price.price_amount,
+            price_currency=price.price_currency,
+            product_period_days=price.product_period_days,
+            is_active=price.is_active,
+            paddle_price_id=price.paddle_price_id,
+            is_annual=price.is_annual,
+            is_monthly=price.is_monthly,
+            created_at=price.created_at,
+            updated_at=price.updated_at,
+            product={
+                "id": price.product.id,
+                "name": price.product.name,
+                "description": price.product.description,
+                "account_limit": price.product.account_limit,
+                "descriptive_features": price.product.descriptive_features or [],
+                "is_active": price.product.is_active,
+                "created_at": price.product.created_at,
+                "updated_at": price.product.updated_at,
+            },
+        )
+
+    def _load_price_with_product(self, price_id: int) -> Optional[Price]:
+        """Load a Price with its product relationship eagerly loaded."""
+        if not price_id:
+            return None
+        return self.session.exec(
+            select(Price)
+            .options(selectinload(Price.product))
+            .where(Price.id == price_id)
+        ).first()
+
     def _to_subscription_read(self, sub: Subscription) -> SubscriptionRead:
         """Convert Subscription model to read schema."""
-        price_read = None
-        if sub.price_id:
-            price = self.session.exec(
-                select(Price)
-                .options(selectinload(Price.product))
-                .where(Price.id == sub.price_id)
-            ).first()
-            if price and price.product:
-                price_read = PriceRead(
-                    id=price.id,
-                    product_id=price.product_id,
-                    price_amount=price.price_amount,
-                    price_currency=price.price_currency,
-                    product_period_days=price.product_period_days,
-                    is_active=price.is_active,
-                    paddle_price_id=price.paddle_price_id,
-                    is_annual=price.is_annual,
-                    is_monthly=price.is_monthly,
-                    created_at=price.created_at,
-                    updated_at=price.updated_at,
-                    product={
-                        "id": price.product.id,
-                        "name": price.product.name,
-                        "description": price.product.description,
-                        "account_limit": price.product.account_limit,
-                        "descriptive_features": price.product.descriptive_features or [],
-                        "is_active": price.product.is_active,
-                        "created_at": price.product.created_at,
-                        "updated_at": price.product.updated_at,
-                    },
-                )
+        price = self._load_price_with_product(sub.price_id)
+        price_read = self._build_price_read(price)
 
-        # Compute account_limit from the product
+        # Compute account_limit from the already-loaded price/product
         account_limit = 0
-        if sub.price_id:
-            price = self.session.get(Price, sub.price_id)
-            if price:
-                product = self.session.get(Product, price.product_id)
-                if product:
-                    account_limit = product.account_limit
+        if price and price.product:
+            account_limit = price.product.account_limit
 
         return SubscriptionRead(
             id=sub.id,
@@ -143,37 +148,8 @@ class BillingService:
 
     def _to_invoice_public(self, inv: Invoice) -> InvoicePublic:
         """Convert Invoice model to public schema."""
-        price = self.session.exec(
-            select(Price)
-            .options(selectinload(Price.product))
-            .where(Price.id == inv.price_id)
-        ).first()
-
-        price_read = None
-        if price and price.product:
-            price_read = PriceRead(
-                id=price.id,
-                product_id=price.product_id,
-                price_amount=price.price_amount,
-                price_currency=price.price_currency,
-                product_period_days=price.product_period_days,
-                is_active=price.is_active,
-                paddle_price_id=price.paddle_price_id,
-                is_annual=price.is_annual,
-                is_monthly=price.is_monthly,
-                created_at=price.created_at,
-                updated_at=price.updated_at,
-                product={
-                    "id": price.product.id,
-                    "name": price.product.name,
-                    "description": price.product.description,
-                    "account_limit": price.product.account_limit,
-                    "descriptive_features": price.product.descriptive_features or [],
-                    "is_active": price.product.is_active,
-                    "created_at": price.product.created_at,
-                    "updated_at": price.product.updated_at,
-                },
-            )
+        price = self._load_price_with_product(inv.price_id)
+        price_read = self._build_price_read(price)
 
         return InvoicePublic(
             id=inv.id,
@@ -257,7 +233,6 @@ class BillingService:
                     detail="Invalid webhook signature",
                 )
 
-        import json
         try:
             event = json.loads(body)
         except json.JSONDecodeError:
@@ -332,18 +307,22 @@ class BillingService:
 
         self.session.commit()
 
-        # Create invoice
-        invoice = Invoice(
-            user_id=user_id,
-            price_id=price_id,
-            charge_id=charge_id,
-            amount=amount,
-            currency=currency,
-            billing_period_start=now,
-            billing_period_end=period_end,
-        )
-        self.session.add(invoice)
-        self.session.commit()
+        # Create invoice (skip if already exists — e.g. redirect re-processed after webhook)
+        existing_invoice = self.session.exec(
+            select(Invoice).where(Invoice.charge_id == charge_id)
+        ).first()
+        if not existing_invoice:
+            invoice = Invoice(
+                user_id=user_id,
+                price_id=price_id,
+                charge_id=charge_id,
+                amount=amount,
+                currency=currency,
+                billing_period_start=now,
+                billing_period_end=period_end,
+            )
+            self.session.add(invoice)
+            self.session.commit()
         logger.info("Charge success processed for user %s, charge %s", user_id, charge_id)
 
     def _handle_charge_failed(self, data: dict) -> None:
@@ -598,34 +577,40 @@ class BillingService:
         paginated = statement.offset(offset).limit(page_size)
         rows = self.session.exec(paginated).all()
 
+        # Batch-load prices to avoid N+1 query
+        price_ids = {sub.price_id for sub, _ in rows if sub.price_id}
+        price_map: dict = {}
+        if price_ids:
+            prices = self.session.exec(
+                select(Price)
+                .options(selectinload(Price.product))
+                .where(Price.id.in_(price_ids))
+            ).all()
+            price_map = {p.id: p for p in prices}
+
         # Build items
         items: List[AdminSubscriptionRead] = []
         for sub, user in rows:
-            # Get plan name and price info
+            # Get plan name and price info from preloaded map
             plan_name = None
             price_amount = None
             price_currency = None
             billing_cycle = None
             account_limit = None
 
-            if sub.price_id:
-                price = self.session.exec(
-                    select(Price)
-                    .options(selectinload(Price.product))
-                    .where(Price.id == sub.price_id)
-                ).first()
-                if price:
-                    price_amount = price.price_amount
-                    price_currency = price.price_currency
-                    if price.is_monthly:
-                        billing_cycle = "monthly"
-                    elif price.is_annual:
-                        billing_cycle = "annual"
-                    else:
-                        billing_cycle = f"{price.product_period_days} days"
-                    if price.product:
-                        plan_name = price.product.name
-                        account_limit = price.product.account_limit
+            price = price_map.get(sub.price_id) if sub.price_id else None
+            if price:
+                price_amount = price.price_amount
+                price_currency = price.price_currency
+                if price.is_monthly:
+                    billing_cycle = "monthly"
+                elif price.is_annual:
+                    billing_cycle = "annual"
+                else:
+                    billing_cycle = f"{price.product_period_days} days"
+                if price.product:
+                    plan_name = price.product.name
+                    account_limit = price.product.account_limit
 
             status_val = sub.status.value if isinstance(sub.status, SubscriptionStatus) else sub.status
 
