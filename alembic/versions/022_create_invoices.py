@@ -1,7 +1,7 @@
 """Create invoices table
 
 Revision ID: 022_create_invoices
-Revises: 021_create_app_configs
+Revises: 020_create_user_instructions
 Create Date: 2024-01-01
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '022_create_invoices'
-down_revision: Union[str, None] = '021_create_app_configs'
+down_revision: Union[str, None] = '020_create_user_instructions'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
