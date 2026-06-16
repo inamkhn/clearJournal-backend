@@ -10,7 +10,7 @@ A **crypto trading journal** backend built with FastAPI. Helps traders track, an
 - **Wallet Tracking** — Monitor wallet balances and fiat exposure across accounts
 - **Verification Pages** — Public-facing pages where traders can showcase verified performance
 - **Billing & Subscriptions** — Subscription plans with Tap Payments integration, invoicing, and admin panel
-- **AI Conversations** — Chat with an AI assistant about your trading (Anthropic-powered)
+- **AI Conversations** — Chat with an AI assistant about your trading (OpenAI-powered)
 - **Exchange Sync** — Background Celery workers sync trades and balances from connected exchanges
 
 ## Tech Stack
@@ -24,7 +24,7 @@ A **crypto trading journal** backend built with FastAPI. Helps traders track, an
 | Migrations | Alembic |
 | Storage | AWS S3 (boto3) |
 | Payments | Tap Payments |
-| AI | Anthropic |
+| AI | OpenAI (GPT-4o) |
 | Email | SendGrid |
 
 ## Quick Start

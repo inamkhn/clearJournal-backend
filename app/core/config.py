@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     TAP_API_KEY: str
     
     # AI
-    ANTHROPIC_API_KEY: str
+    OPENAI_API_KEY: str
     
     # Email
     SENDGRID_API_KEY: str

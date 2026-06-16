@@ -14,5 +14,6 @@ cryptography
 httpx
 python-multipart
 sendgrid
-anthropic
+openai
+tiktoken
 sqlmodel
