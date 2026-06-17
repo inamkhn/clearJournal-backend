@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     
     # AI
     OPENAI_API_KEY: str
+    AGENT_MODEL: str = "gpt-4o"
+    AGENT_MAX_TOOL_CALLS: int = 5
+    AGENT_MAX_RESPONSE_TOKENS: int = 1000
+    CHAT_RATE_LIMIT_PER_MINUTE: int = 10
+    CHAT_DAILY_LIMIT_FREE_PLAN: int = 10
+    CHAT_DAILY_LIMIT_PRO_PLAN: int = 100
+    CHAT_DAILY_LIMIT_ENTERPRISE_PLAN: int = 500
+    DAILY_COST_LIMIT_USD: float = 50.0
     
     # Email
     SENDGRID_API_KEY: str
