@@ -15,5 +15,6 @@ httpx
 python-multipart
 sendgrid
 openai
+tenacity
 tiktoken
 sqlmodel
